@@ -632,8 +632,9 @@ infinite_loop = compile("""
 
 ;; output a blue shirt
 
-;; there is a spare 7 on the stack, add 9 and you get 6blue
-3addi 9
+;; there is a spare 4 or 7 on the stack, lets make it a 6blue!
+4muli 0
+3addi 6
 1mvto 9out
 
 2mvfr 0const
