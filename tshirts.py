@@ -89,8 +89,8 @@ Opcodes (each receives a parameter, unless noted as "immediate" the
 param represents the stack to operate upon):
 
 0stop                 stop. It is customary to give 0stop as parameter
-1mvto                 move OT to top of param stack
-2mvfr                 move top of param stack to operations stack
+1mvto                 move OT to top of param stack (if it's empty, do nothing)
+2mvfr                 move from param stack to operations (if empty, do nothing)
 3addi                 OT <- OT + param (as immediate, not stack number)
 4muli                 OT <- OT * param (as immediate)
 5adds                 top of param stack <- top of param stack + OT*
@@ -182,7 +182,7 @@ class DoneException(Exception):
 class State(object):
     def __init__(self, instructions):
         self.s = map(lambda x: [], xrange(NUM_STACKS))
-        self.s[CONST0] += [0] * 20
+        self.s[CONST0] += [0] * 1000
         self.s[INSTR] += instructions
         self.s[INSTR].reverse()
         
@@ -217,11 +217,13 @@ class State(object):
         raise DoneException()
 
     def mvto(self, param):
-        value = self.s[OPER].pop()
-        self.s[param].append(value)
+        self.mvfrto(OPER, param)
     def mvfr(self, param):
-        value = self.s[param].pop()
-        self.s[OPER].append(value)
+        self.mvfrto(param, OPER)
+    def mvfrto(self, fr, to):
+        if self.s[fr]:
+            value = self.s[fr].pop()
+            self.s[to].append(value)
 
     def addi(self, param):
         self.op_i(operator.add, param)
@@ -305,48 +307,95 @@ class CursedState(State):
             curses.init_pair(5, 0, 2)
             curses.init_pair(6, 0, 4)
             curses.init_pair(7, 0, 5)
-            curses.init_pair(8, 1, 6)
+            curses.init_pair(8, 0, 6)
             curses.init_pair(9, 7, 0)
 
+            self.initial_stacks = map(list, self.s)
+            self.stepping = True
+            self.ff_target = None
+            self.step_count = 0
+            self.separate_couples = True
             self.message = ""
             
-            State.loop(self)
+            self.show()
+            try:
+                while True:
+                    self.step_count += 1
+                    if self.step_count == self.ff_target:
+                        self.stepping = True
+                    self.message = "%r\t" % (self.step_count)
+                    self.step()
+                    if self.stepping:
+                        self.show()
+            except DoneException, e:
+                self.show()
+            except object, e:
+                self.message = str(e)
+                self.show()
             
         curses.wrapper(f)
-
-    def step(self):
-        self.stdscr.clear()
-        self.message = ""
-        State.step(self)
 
     def output(self, message):
         self.message += message + "\t"
 
     def show(self):
+        self.stdscr.clear()
         self.stdscr.addstr(0, self.STACK_WIDTH * NUM_STACKS / 2,
                            self.message, curses.A_STANDOUT)
         my, mx = self.stdscr.getmaxyx()
         for (i, stack) in enumerate(self.s):
             self.show_stack(my, mx, i, stack)
+        self.prompt()
+
+    def prompt(self):
         self.stdscr.refresh()
-        while 1:
+        while True:
             c = self.stdscr.getch()
+            # forward
+            if c == ord(' '):
+                break
+            # back
+            if c == ord('b'):
+                self.goto(self.step_count - 1)
+                break
+            # goto
+            if c == ord('g'):
+                self.goto(int(self.stdscr.getstr(1, 10)))
+                break
+            # separator
+            if c == ord('s'):
+                self.separate_couples = not self.separate_couples
+                self.show()
+                break
+            # refresh
             if c == ord('r'):
                 self.show()
                 break
-            if c == ord(' '):
-                break
+            # guess...
             if c == ord('q'):
                 sys.exit(0)
+
+    def goto(self, i):
+        self.ff_target = i
+
+        if i < self.step_count:
+            self.s = map(list, self.initial_stacks)
+            self.step_count = 0
+
+        if self.ff_target > self.step_count:
+            self.stepping = False
 
     def show_stack(self, my, mx, i, stack):
         self.stdscr.addstr(my-1, i * self.STACK_WIDTH, STACKNAMES[i], self.colors[i])
         
         for j, instruction in enumerate(stack):
-            if my - 3 - j > 1:
-                self.stdscr.addstr(my-3-j, i * self.STACK_WIDTH, OPNAMES[instruction], self.colors[instruction])
-            elif my - 3 - j == 1:
-                self.stdscr.addstr(my-3-j, i * self.STACK_WIDTH, "...")
+            y = my - 3 - j
+            if self.separate_couples:
+                y -= j/2
+            if y > 1:
+                self.stdscr.addstr(y, i * self.STACK_WIDTH, OPNAMES[instruction], self.colors[instruction])
+            else:
+                self.stdscr.addstr(1, i * self.STACK_WIDTH, "...")
                 
             
 
@@ -488,6 +537,94 @@ Call a subroutine to output a blue shirt
 
 ;; notice that when we're called back, we'll immediately switch to
 ;; 6stack. So we put code there to stop the program.
+""")
+
+
+infinite_loop = compile("""
+Infinite loop that outputs blue shirts
+======================================
+
+2mvfr 0const
+3addi 7
+2mvfr 0const
+3addi 7
+
+9exch 2recycle
+
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+2mvfr 7stack
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+1mvto 4garbage
+
+;; output a blue shirt
+
+2mvfr 0const
+3addi 6blue
+1mvto 9out
+
+;; make a "reflector" that re-runs all code (which outputs then makes a reflector, ...) when called
+
+;; store it in 7stack (so on being called it has to exchange stacks
+;; 2recycle and 7stack, then to return it has to flip 7stack and
+;; exchange 1instr and 7stack)
+
+;; place the subroutine in 3oper
+
+;;;;;;;;; Subroutine: Rerun us
+;;;;; this has to be a nop when ran backwards, because it will be ran
+;;;;; backwards (run emulation to figure out why)
+;;;;; we can assume that OT is 7 since we got called
+;;;; 9exch 2recycle
+;;;;; return
+;;;; 8flip 7stack
+;;;;; OT is 7 from before
+;;;; 9exch 1instr
+2mvfr 0const
+3addi     9exch
+2mvfr 0const
+3addi     2recycle
+2mvfr 0const
+3addi     8flip
+2mvfr 0const
+3addi     7stack
+2mvfr 0const
+3addi     9exch
+2mvfr 0const
+3addi     1instr
+;; it is now upside-down. flip it (could have been avoided but then
+;; would be less readable)
+8flip 3oper
+
+  7noop 1
+
+;; move it, with an extra 7 noop7, to 7stack
+;;
+;; why 7noop 7? we need a 7 as parameter to pexch, and we need it to
+;; be harmless when later flipped and executed, so we make it into a nop
+2mvfr 0const
+3addi 7stack
+2mvfr 0const
+3addi 7stack
+9exch 3oper
+
+;; move the 7s back to 3oper
+2mvfr 7stack
+2mvfr 7stack
+
+;; and, call!
+9exch 1instr
 """)
 
 
