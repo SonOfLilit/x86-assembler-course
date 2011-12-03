@@ -569,7 +569,11 @@ infinite_loop = compile("""
 ; create a new one in each iteration. Here we've chosen the first one,
 ; though a true T-shirts factory would probably prefer O(1) garbage to
 ; O(n) garbage with a large constant like in our solution. (We throw
-; away 4 + 8*(number of produced shirts) shirts).
+; away 4 + 6*(number of produced shirts) shirts).
+;
+;
+; Note2: The reader is advised to follow this code's evolution in git.
+;
 ;
 ; * At one point it this code's life, it *had* to be 7stack for our
 ;   code to work: I had to switch stacks 1 and 7, and it left a 7 on
@@ -669,8 +673,11 @@ infinite_loop = compile("""
 8flip 3oper
 
 ;; move it to 7stack
-2mvfr 0const
-3addi 7stack
+
+;; turns out that 4garbage always has a 7 on top here, let's use that
+;; to save a few shirts
+2mvfr 4garbage  
+
 9exch 3oper
 
 ;; move the 7 back to 3oper
