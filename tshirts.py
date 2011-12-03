@@ -402,20 +402,19 @@ class CursedState(State):
     
 
 def compile(string):
-    string = string[string.find("=="):]
     string = re.sub(";.*", "", string)
     return map(int, filter(str.isdigit, string))
 
 stop = compile("""
-Stop
-====
+;Stop
+;====
 
 0stop 0stop
 """)
 
 istop = compile("""
-Indirectly stop
-===============
+;Indirectly stop
+;===============
 
 ; set OT to 0const by moving a 0 from 0const to 3oper
 2mvfr 0const
@@ -424,8 +423,8 @@ Indirectly stop
 """)
 
 fiveshirts = compile("""
-Output 5 blue shirts
-====================
+;Output 5 blue shirts
+;====================
 
 2mvfr 0const
 3addi 6blue
@@ -450,8 +449,8 @@ Output 5 blue shirts
 
 
 subroutine = compile("""
-Call a subroutine to output a blue shirt
-========================================
+;Call a subroutine to output a blue shirt
+;========================================
 
 ;; make a subroutine that outputs a blue shirt and returns to us
 
@@ -541,13 +540,79 @@ Call a subroutine to output a blue shirt
 
 
 infinite_loop = compile("""
-Infinite loop that outputs blue shirts
-======================================
+;Infinite loop that outputs blue shirts
+;======================================
+
+;; Big picture:
+
+; We'll use stacks 0-4 and 9 as intended and also 7stack for temporary
+; storage*.
+;
+; We're going to use a "reflector" - a piece of code that returns
+; control right back to what's in the recycle bin.  A reflector
+; requires handling with care. When we get control back, we have the
+; reflector itself in the recycle bin that must be disposed of (or
+; else on the next iterator the reflector will return control to
+; <reflector|our code>).
+;
+; When the reflector returns control to us, there is always 7stack in
+; OT. That is because it has to do 9exch 1instr to return control. It
+; is actually useful - we could 0exch 2recycle and then put the
+; reflector in the 4garbage without worrying about our own code
+; muddling 2recycle. But to do that we need to make sure we have a 7
+; in OT on the first run, and clean up the code that creates that 7
+; from 2recycle so that it would indeed only happen in the first
+; run. As you'll see if you read on, luckily, we get that for free.
+;
+; Note: there are two approaches: Either we find some way to preserve
+; our reflector out of harm's way, or we throw it in the garbage and
+; create a new one in each iteration. Here we've chosen the first one,
+; though a true T-shirts factory would probably prefer O(1) garbage to
+; O(n) garbage with a large constant like in our solution. (We throw
+; away 4 + 8*(number of produced shirts) shirts).
+;
+; * At one point it this code's life, it *had* to be 7stack for our
+;   code to work: I had to switch stacks 1 and 7, and it left a 7 on
+;   the bottom of 3oper that I couldn't remove, and it would've put
+;   the next reflector I built out of sync! The elegant solution was
+;   to add an extra 7, making them a noop command that would execute
+;   harmlessly before the reflector.
+;
+;   This could be useful when pursuing the O(1) temp shirts route.
+
+
+;; This runs only in the first iteration, making the 9exch not fail,
+;; and gets cleaned up by the code that's supposed to clean the
+;; reflector. I love it when I get stuff for free.
 
 2mvfr 0const
 3addi 7
-2mvfr 0const
-3addi 7
+
+
+; Historical note: Since the reflector happens to be a 6 opcode noop
+; when inverted, I tried "dealing with it" by flipping it (and then a
+; 6 opcode noop would be prepended to the main loop, making runtime
+; slower but still working).
+;
+; That way all this code wouldn't be needed, nor the code above to
+; ensure we have a 7 in OT on the first run.
+;
+; Alas, I have only one op to run that "deals with it" before my own
+; code starts garbaging 2recycle. Just doing "8flip 2recycle" would
+; work for the first iteration but on the second the first 6 opcode
+; noop would run first, get put itself in 2recycle, and then the flip
+; would flip it back to not being a noop. 9exch would mean I need to
+; promise a 7 would be in OT, bringing this complicated code.
+;
+; The reader is advised to play with it and try to solve it in
+; different ways. It's an awesome problem.
+
+
+;; On the first run, this cleans the stuff we put on 7stack (and does
+;; nothing for a few cycles after that). On subsequent runs, the
+;; 0exch 2recycle puts the just-executed reflector on 7stack and this
+;; cleans it (6 shirt reflector + the "7" in OT for 9exch = 7 shirts
+;; to clean).
 
 9exch 2recycle
 
@@ -558,8 +623,6 @@ Infinite loop that outputs blue shirts
 2mvfr 7stack
 2mvfr 7stack
 2mvfr 7stack
-2mvfr 7stack
-1mvto 4garbage
 1mvto 4garbage
 1mvto 4garbage
 1mvto 4garbage
@@ -574,17 +637,15 @@ Infinite loop that outputs blue shirts
 3addi 6blue
 1mvto 9out
 
-;; make a "reflector" that re-runs all code (which outputs then makes a reflector, ...) when called
+;; make a "reflector" that re-runs all code (which outputs then makes
+;; a reflector, ...) when called. Store it in 7stack (so on being
+;; called it has to immediately exchange stacks 2recycle and 7stack to
+;; avoid adding things to our code in 2recycle, then to return it has
+;; to flip 7stack and exchange 1instr and 7stack)
 
-;; store it in 7stack (so on being called it has to exchange stacks
-;; 2recycle and 7stack, then to return it has to flip 7stack and
-;; exchange 1instr and 7stack)
-
-;; place the subroutine in 3oper
+;; build the subroutine in 3oper
 
 ;;;;;;;;; Subroutine: Rerun us
-;;;;; this has to be a nop when ran backwards, because it will be ran
-;;;;; backwards (run emulation to figure out why)
 ;;;;; we can assume that OT is 7 since we got called
 ;;;; 9exch 2recycle
 ;;;;; return
@@ -603,24 +664,16 @@ Infinite loop that outputs blue shirts
 3addi     9exch
 2mvfr 0const
 3addi     1instr
-;; it is now upside-down. flip it (could have been avoided but then
-;; would be less readable)
+;; it is now upside-down. flip it (could have been avoided by writing
+;; it upside down but then the code would be less readable)
 8flip 3oper
 
-  7noop 1
-
-;; move it, with an extra 7 noop7, to 7stack
-;;
-;; why 7noop 7? we need a 7 as parameter to pexch, and we need it to
-;; be harmless when later flipped and executed, so we make it into a nop
-2mvfr 0const
-3addi 7stack
+;; move it to 7stack
 2mvfr 0const
 3addi 7stack
 9exch 3oper
 
-;; move the 7s back to 3oper
-2mvfr 7stack
+;; move the 7 back to 3oper
 2mvfr 7stack
 
 ;; and, call!
