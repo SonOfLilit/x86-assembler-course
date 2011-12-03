@@ -562,17 +562,17 @@ infinite_loop = compile("""
 ; muddling 2recycle. But to do that we need to make sure we have a 7
 ; in OT on the first run, and clean up the code that creates that 7
 ; from 2recycle so that it would indeed only happen in the first
-; run. As you'll see if you read on, luckily, we get that for free.
+; run.
 ;
 ; Note: there are two approaches: Either we find some way to preserve
 ; our reflector out of harm's way, or we throw it in the garbage and
-; create a new one in each iteration. Here we've chosen the first one,
-; though a true T-shirts factory would probably prefer O(1) garbage to
-; O(n) garbage with a large constant like in our solution. (We throw
-; away 4 + 6*(number of produced shirts) shirts).
+; create a new one in each iteration. Here we've chosen the second way.
+; See in git for an implementation using the first way (which is much
+; more complex but I found it first).
 ;
-;
-; Note2: The reader is advised to follow this code's evolution in git.
+; 
+; Note2: The reader is strongly advised to follow this code's evolution
+; in git.
 ;
 ;
 ; * At one point it this code's life, it *had* to be 7stack for our
@@ -581,68 +581,10 @@ infinite_loop = compile("""
 ;   the next reflector I built out of sync! The elegant solution was
 ;   to add an extra 7, making them a noop command that would execute
 ;   harmlessly before the reflector.
-;
-;   This could be useful when pursuing the O(1) temp shirts route.
 
 
-;; This runs only in the first iteration, making the 9exch not fail,
-;; and gets cleaned up by the code that's supposed to clean the
-;; reflector. I love it when I get stuff for free.
-
-2mvfr 0const
-3addi 7
-
-
-; Historical note: Since the reflector happens to be a 6 opcode noop
-; when inverted, I tried "dealing with it" by flipping it (and then a
-; 6 opcode noop would be prepended to the main loop, making runtime
-; slower but still working).
-;
-; That way all this code wouldn't be needed, nor the code above to
-; ensure we have a 7 in OT on the first run.
-;
-; Alas, I have only one op to run that "deals with it" before my own
-; code starts garbaging 2recycle. Just doing "8flip 2recycle" would
-; work for the first iteration but on the second the first 6 opcode
-; noop would run first, get put itself in 2recycle, and then the flip
-; would flip it back to not being a noop. 9exch would mean I need to
-; promise a 7 would be in OT, bringing this complicated code.
-;
-; The reader is advised to play with it and try to solve it in
-; different ways. It's an awesome problem.
-
-
-;; On the first run, this cleans the stuff we put on 7stack (and does
-;; nothing for a few cycles after that). On subsequent runs, the
-;; 0exch 2recycle puts the just-executed reflector on 7stack and this
-;; cleans it (6 shirt reflector + the "7" in OT for 9exch = 7 shirts
-;; to clean).
-
-9exch 2recycle
-
-2mvfr 7stack
-2mvfr 7stack
-2mvfr 7stack
-2mvfr 7stack
-2mvfr 7stack
-2mvfr 7stack
-2mvfr 7stack
-1mvto 4garbage
-1mvto 4garbage
-1mvto 4garbage
-1mvto 4garbage
-1mvto 4garbage
-1mvto 4garbage
-1mvto 4garbage
-
-;; output a blue shirt
-
-2mvfr 0const
-3addi 6blue
-1mvto 9out
-
-;; make a "reflector" that re-runs all code (which outputs then makes
-;; a reflector, ...) when called. Store it in 7stack (so on being
+;; make a "reflector" that re-runs all code (which outputs then calls
+;; the reflector, ...) when called. Store it in 7stack (so on being
 ;; called it has to immediately exchange stacks 2recycle and 7stack to
 ;; avoid adding things to our code in 2recycle, then to return it has
 ;; to flip 7stack and exchange 1instr and 7stack)
@@ -668,20 +610,34 @@ infinite_loop = compile("""
 3addi     9exch
 2mvfr 0const
 3addi     1instr
-;; it is now upside-down. flip it (could have been avoided by writing
-;; it upside down but then the code would be less readable)
-8flip 3oper
+; it must be flipped before it can run. We do that later.
 
 ;; move it to 7stack
-
-;; turns out that 4garbage always has a 7 on top here, let's use that
-;; to save a few shirts
-2mvfr 4garbage  
-
+2mvfr 0const
+3addi 7
 9exch 3oper
 
-;; move the 7 back to 3oper
+;; move the 7 in OT back to 3oper
 2mvfr 7stack
+
+;; clean 2recycle
+;;   7 + 7 = 4garbage
+3addi 7
+;; This is the first code that runs in a subsequent iteration, upon
+;; which it puts the reflector in stack 7
+9exch 2recycle
+
+;; flip the reflector so it can run again
+8flip 7stack
+
+;; output a blue shirt
+
+;; there is a spare 7 on the stack, add 9 and you get 6blue
+3addi 9
+1mvto 9out
+
+2mvfr 0const
+3addi 7stack
 
 ;; and, call!
 9exch 1instr
