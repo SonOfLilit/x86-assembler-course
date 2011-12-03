@@ -124,6 +124,8 @@ import operator
 import re
 
 
+NUM_STACKS = 10
+
 COLORS = [
     "0white",
     "1brown",
@@ -161,7 +163,7 @@ OPERATORS = [
     "9exch"
     ]
 NUMBERS = {}
-for i in xrange(10):
+for i in xrange(NUM_STACKS):
     NUMBERS[COLORS[i]] = i
     NUMBERS[STACKS[i]] = i
     NUMBERS[OPERATORS[i]] = i
@@ -179,7 +181,7 @@ class DoneException(Exception):
 
 class State(object):
     def __init__(self, instructions):
-        self.s = map(lambda x: [], xrange(10))
+        self.s = map(lambda x: [], xrange(NUM_STACKS))
         self.s[CONST0] += [0] * 20
         self.s[INSTR] += instructions
         self.s[INSTR].reverse()
@@ -187,7 +189,7 @@ class State(object):
     def step(self):
         instruction = self.s[INSTR].pop()
         param = self.s[INSTR].pop()
-        print OPNAMES[instruction]
+        self.output("%s %s" % (OPNAMES[instruction], param))
         self.ops[instruction](self, param)
         self.s[RECYCLE].append(instruction)
         self.s[RECYCLE].append(param)
@@ -202,17 +204,16 @@ class State(object):
         except DoneException:
             pass
     
+    def output(self, message):
+        print message
+
     def show(self):
         return "\n".join(map(self.show_stack, enumerate(self.s)))
     def show_stack(self, (i, stack)):
         return "%8s [%s]" % (STACKNAMES[i], "\t".join(OPNAMES[x] for x in stack))
 
     def stop(self, param):
-        print
-        print
-        print "Output:"
-        print self.show_stack((9, self.s[9]))
-        print "Program exited with param %d" % param
+        self.output("Program exited with param %d" % param)
         raise DoneException()
 
     def mvto(self, param):
@@ -240,7 +241,7 @@ class State(object):
         self.s[param].append(r)
 
     def noop(self, param):
-        print "*** noop with param %d" % param
+        self.output("*** noop with param %d" % param)
     
     def flip(self, param):
         self.s[param].reverse()
@@ -262,6 +263,94 @@ class State(object):
         ]
 
 
+import curses
+
+class CursedState(State):
+    STACK_WIDTH = 10
+    
+    def loop(self):
+        def f(stdscr):
+            self.stdscr = stdscr
+            assert curses.COLOR_PAIRS >= NUM_STACKS + 1
+            """
+            "0white",
+            "1brown",
+            "2red",
+            "3orange",
+            "4yellow",
+            "5green",
+            "6blue",
+            "7violet",
+            "8gray",
+            "9black"
+            """
+            self.colors = {
+                # since 0 can't be modified
+                0: curses.color_pair(11),
+                1: curses.color_pair(1),
+                2: curses.color_pair(2),
+                3: curses.color_pair(3),
+                4: curses.color_pair(4),
+                5: curses.color_pair(5),
+                6: curses.color_pair(6),
+                7: curses.color_pair(7),
+                8: curses.color_pair(8),
+                9: curses.color_pair(9)
+                }
+            curses.init_pair(11, 0, 7)
+            curses.init_pair(1, 3, 1)
+            curses.init_pair(2, 0, 1)
+            curses.init_pair(3, 1, 3)
+            curses.init_pair(4, 0, 3)
+            curses.init_pair(5, 0, 2)
+            curses.init_pair(6, 0, 4)
+            curses.init_pair(7, 0, 5)
+            curses.init_pair(8, 1, 6)
+            curses.init_pair(9, 7, 0)
+
+            self.message = ""
+            
+            State.loop(self)
+            
+        curses.wrapper(f)
+
+    def step(self):
+        self.stdscr.clear()
+        self.message = ""
+        State.step(self)
+
+    def output(self, message):
+        self.message += message + "\t"
+
+    def show(self):
+        self.stdscr.addstr(0, self.STACK_WIDTH * NUM_STACKS / 2,
+                           self.message, curses.A_STANDOUT)
+        my, mx = self.stdscr.getmaxyx()
+        for (i, stack) in enumerate(self.s):
+            self.show_stack(my, mx, i, stack)
+        self.stdscr.refresh()
+        while 1:
+            c = self.stdscr.getch()
+            if c == ord('r'):
+                self.show()
+                break
+            if c == ord(' '):
+                break
+            if c == ord('q'):
+                sys.exit(0)
+
+    def show_stack(self, my, mx, i, stack):
+        self.stdscr.addstr(my-1, i * self.STACK_WIDTH, STACKNAMES[i], self.colors[i])
+        
+        for j, instruction in enumerate(stack):
+            if my - 3 - j > 1:
+                self.stdscr.addstr(my-3-j, i * self.STACK_WIDTH, OPNAMES[instruction], self.colors[instruction])
+            elif my - 3 - j == 1:
+                self.stdscr.addstr(my-3-j, i * self.STACK_WIDTH, "...")
+                
+            
+
+    
 
 def compile(string):
     string = string[string.find("=="):]
@@ -402,6 +491,6 @@ Call a subroutine to output a blue shirt
 """)
 
 
-s = State(locals()[sys.argv[1]])
+s = CursedState(locals()[sys.argv[1]])
 
 s.loop()
