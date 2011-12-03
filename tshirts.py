@@ -125,6 +125,7 @@ import re
 
 
 NUM_STACKS = 10
+INITIAL_CONST0_COUNT = 1000
 
 COLORS = [
     "0white",
@@ -182,7 +183,7 @@ class DoneException(Exception):
 class State(object):
     def __init__(self, instructions):
         self.s = map(lambda x: [], xrange(NUM_STACKS))
-        self.s[CONST0] += [0] * 1000
+        self.s[CONST0] += [0] * INITIAL_CONST0_COUNT
         self.s[INSTR] += instructions
         self.s[INSTR].reverse()
         
@@ -646,5 +647,109 @@ infinite_loop = compile("""
 
 
 s = CursedState(locals()[sys.argv[1]])
-
 s.loop()
+
+
+"""
+# for the hardcore, an exploit:
+
+s = CursedState(infinite_loop)
+exploit = compile('''
+; Exploit for infinite_loop
+; =========================
+;
+; When placed on top of 0const before infinite_loop runs, this takes
+; control of execution and shows off by initialing an infinite loop
+; that does absolutely nothing (reusing the reflector)
+
+; to follow, it is advised to lower INITIAL_CONST0_COUNT to say 30
+
+; let the code build its reflector
+0
+0
+0
+0
+0
+0
+
+; let the code exchange 3oper with 7stack
+0
+
+; (this shirt + 7) will be used to 9exch 1instr. Lets make it exchange
+; with 0const }:->
+3
+
+; so all the rest will be put in 1instr, lets put a payload here...
+; say... why don't we do a useless infinite loop, as suggested by Ofer?
+
+;; flip the reflector since we expect to find it needing a flip in our
+;; loop (btw thanks original infinite_loop author for providing us with
+;; a ready to use reflector :P )
+8flip 7stack
+
+; we need to put all those 0s below us out of the way
+
+; lets drop our real code to 0 and switch 0 with 1
+
+;;; our real code:
+;;;; we need to get rid of 2recycle, and luckily, there's already a 0 in
+;;;; 3oper
+;;3addi 5
+;;9xchg 2recycle
+;;
+;;; the reflector must be flipped
+;;8flip 7stack
+;;
+;;;; we need OT to be 7
+;;4muli 0
+;;3addi 7
+;;
+;;9xchg 1instr
+
+
+2mvfr 1instr
+   3addi
+1mvto 0stack
+2mvfr 1instr
+   5
+1mvto 0stack
+2mvfr 1instr
+   9xchg
+1mvto 0stack
+2mvfr 1instr
+   2recycle
+1mvto 0stack
+2mvfr 1instr
+   8flip
+1mvto 0stack
+2mvfr 1instr
+   7stack
+1mvto 0stack
+2mvfr 1instr
+   4muli
+1mvto 0stack
+2mvfr 1instr
+   0
+1mvto 0stack
+2mvfr 1instr
+   3addi
+1mvto 0stack
+2mvfr 1instr
+   7
+1mvto 0stack
+2mvfr 1instr
+   9xchg
+1mvto 0stack
+2mvfr 1instr
+   1instr
+1mvto 0stack
+
+; we already have a 0 in OT :-)
+8flip 0stack
+9exch 1instr
+
+''')
+exploit.reverse()
+s.s[CONST0] += exploit
+s.loop()
+"""
